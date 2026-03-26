@@ -590,10 +590,12 @@ def run_autodiscover() -> dict[str, str] | None:
     print("Running autodiscover...")
     print()
 
-    # Build env for the subprocess so CONFIG_FILE is passed through
+    # Pass CONFIG_FILE so autodiscover.sh knows where to save the config.
+    # Do NOT set CONFIG_FILE_SET=true — that would cause an error if the file
+    # doesn't exist yet (it's the file we're about to create).
     env_vars = os.environ.copy()
     env_vars["CONFIG_FILE"] = str(ENV_FILE)
-    env_vars["CONFIG_FILE_SET"] = "true"
+    env_vars.pop("CONFIG_FILE_SET", None)
 
     # Run autodiscover interactively so its prompts are shown to the user
     script = f"""
