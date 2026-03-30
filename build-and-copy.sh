@@ -14,11 +14,14 @@ COPY_TO_FLAG=false
 SSH_USER="$USER"
 NO_BUILD=false
 VLLM_REF="main"
+VLLM_REF_SET=false
+FLASHINFER_REF="main"
+FLASHINFER_REF_SET=false
 TMP_IMAGE=""
 PARALLEL_COPY=false
 EXP_MXFP4=false
-VLLM_REF_SET=false
 VLLM_PRS=""
+FLASHINFER_PRS=""
 PRE_TRANSFORMERS=false
 FULL_LOG=false
 BUILD_JOBS="16"
@@ -271,6 +274,7 @@ usage() {
     echo "  --rebuild-flashinfer          : Force rebuild of FlashInfer wheels (ignore cached wheels)"
     echo "  --rebuild-vllm                : Force rebuild of vLLM wheels (ignore cached wheels)"
     echo "  --vllm-ref <ref>              : vLLM commit SHA, branch or tag (default: 'main')"
+    echo "  --flashinfer-ref <ref>        : FlashInfer commit SHA, branch or tag (default: 'main')"
     echo "  -c, --copy-to <hosts>         : Host(s) to copy the image to. Accepts comma or space-delimited lists."
     echo "      --copy-to-host            : Alias for --copy-to (backwards compatibility)."
     echo "      --copy-parallel           : Copy to all hosts in parallel instead of serially."
@@ -279,6 +283,7 @@ usage() {
     echo "  --tf5                         : Install transformers>=5 (aliases: --pre-tf, --pre-transformers)"
     echo "  --exp-mxfp4, --experimental-mxfp4 : Build with experimental native MXFP4 support"
     echo "  --apply-vllm-pr <pr-num>      : Apply a specific PR patch to vLLM source. Can be specified multiple times."
+    echo "  --apply-flashinfer-pr <pr-num>: Apply a specific PR patch to FlashInfer source. Can be specified multiple times."
     echo "  --full-log                    : Enable full build logging (--progress=plain)"
     echo "  --no-build                    : Skip building, only copy image (requires --copy-to)"
     echo "  --network <network>           : Docker network to use during build"
@@ -298,6 +303,7 @@ while [[ "$#" -gt 0 ]]; do
         --rebuild-flashinfer) REBUILD_FLASHINFER=true ;;
         --rebuild-vllm) REBUILD_VLLM=true ;;
         --vllm-ref) VLLM_REF="$2"; VLLM_REF_SET=true; shift ;;
+        --flashinfer-ref) FLASHINFER_REF="$2"; FLASHINFER_REF_SET=true; shift ;;
         -c|--copy-to|--copy-to-host|--copy-to-hosts)
             COPY_TO_FLAG=true
             shift
@@ -322,6 +328,19 @@ while [[ "$#" -gt 0 ]]; do
                shift
             else
                echo "Error: --apply-vllm-pr requires a PR number."
+               exit 1
+            fi
+            ;;
+        --apply-flashinfer-pr)
+            if [ -n "$2" ] && [[ "$2" != -* ]]; then
+               if [ -n "$FLASHINFER_PRS" ]; then
+                   FLASHINFER_PRS="$FLASHINFER_PRS $2"
+               else
+                   FLASHINFER_PRS="$2"
+               fi
+               shift
+            else
+               echo "Error: --apply-flashinfer-pr requires a PR number."
                exit 1
             fi
             ;;
@@ -399,8 +418,13 @@ if [ -n "$VLLM_PRS" ]; then
     if [ "$EXP_MXFP4" = true ]; then echo "Error: --apply-vllm-pr is incompatible with --exp-mxfp4"; exit 1; fi
 fi
 
+if [ -n "$FLASHINFER_PRS" ]; then
+    if [ "$EXP_MXFP4" = true ]; then echo "Error: --apply-flashinfer-pr is incompatible with --exp-mxfp4"; exit 1; fi
+fi
+
 if [ "$EXP_MXFP4" = true ]; then
     if [ "$VLLM_REF_SET" = true ]; then echo "Error: --exp-mxfp4 is incompatible with --vllm-ref"; exit 1; fi
+    if [ "$FLASHINFER_REF_SET" = true ]; then echo "Error: --exp-mxfp4 is incompatible with --flashinfer-ref"; exit 1; fi
     if [ "$PRE_TRANSFORMERS" = true ]; then echo "Error: --exp-mxfp4 is incompatible with --tf5"; exit 1; fi
     if [ "$REBUILD_FLASHINFER" = true ]; then echo "Error: --exp-mxfp4 is incompatible with --rebuild-flashinfer"; exit 1; fi
     if [ "$REBUILD_VLLM" = true ]; then echo "Error: --exp-mxfp4 is incompatible with --rebuild-vllm"; exit 1; fi
@@ -478,9 +502,21 @@ if [ "$NO_BUILD" = false ]; then
         # ----------------------------------------------------------
         # Phase 1: FlashInfer wheels
         # ----------------------------------------------------------
+        if [ "$FLASHINFER_REF_SET" = true ] || [ -n "$FLASHINFER_PRS" ]; then
+            REBUILD_FLASHINFER=true
+        fi
+
         BUILD_FLASHINFER=false
         if [ "$REBUILD_FLASHINFER" = true ]; then
-            echo "Rebuilding FlashInfer wheels (--rebuild-flashinfer specified)..."
+            if [ "$FLASHINFER_REF_SET" = true ] && [ -n "$FLASHINFER_PRS" ]; then
+                echo "Rebuilding FlashInfer wheels (--flashinfer-ref and --apply-flashinfer-pr specified)..."
+            elif [ "$FLASHINFER_REF_SET" = true ]; then
+                echo "Rebuilding FlashInfer wheels (--flashinfer-ref specified)..."
+            elif [ -n "$FLASHINFER_PRS" ]; then
+                echo "Rebuilding FlashInfer wheels (--apply-flashinfer-pr specified)..."
+            else
+                echo "Rebuilding FlashInfer wheels (--rebuild-flashinfer specified)..."
+            fi
             BUILD_FLASHINFER=true
         elif try_download_wheels "$FLASHINFER_RELEASE_TAG" "flashinfer"; then
             echo "FlashInfer wheels ready."
@@ -502,10 +538,16 @@ if [ "$NO_BUILD" = false ]; then
             FI_CMD=("docker" "build"
                 "--target" "flashinfer-export"
                 "--output" "type=local,dest=./wheels"
-                "${COMMON_BUILD_FLAGS[@]}")
+                "${COMMON_BUILD_FLAGS[@]}"
+                "--build-arg" "FLASHINFER_REF=$FLASHINFER_REF")
 
             if [ "$REBUILD_FLASHINFER" = true ]; then
                 FI_CMD+=("--build-arg" "CACHEBUST_FLASHINFER=$(date +%s)")
+            fi
+
+            if [ -n "$FLASHINFER_PRS" ]; then
+                echo "Applying FlashInfer PRs: $FLASHINFER_PRS"
+                FI_CMD+=("--build-arg" "FLASHINFER_PRS=$FLASHINFER_PRS")
             fi
 
             FI_CMD+=(".")

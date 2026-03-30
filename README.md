@@ -31,6 +31,8 @@ We will expand the selection of models we test in the pipeline, but since vLLM i
 
 If you want to build the latest from main branch, you can specify `--rebuild-vllm` flag. Or you can target a specific vLLM release by setting `--vllm-ref` parameter.
 
+Similarly, `--rebuild-flashinfer`, `--flashinfer-ref`, and `--apply-flashinfer-pr` control the FlashInfer build in the same way.
+
 ## QUICK START
 
 ### Build
@@ -148,6 +150,17 @@ Don't do it every time you rebuild, because it will slow down compilation times.
 For periodic maintenance, I recommend using a filter: `docker builder prune --filter until=72h`
 
 ## CHANGELOG
+
+### 2026-03-29
+
+#### Flags to specify Flashinfer ref and apply PRs
+
+`build-and-copy.sh` gains two new flags that mirror the existing vLLM equivalents:
+
+- `--flashinfer-ref <ref>` — build FlashInfer from a specific commit SHA, branch, or tag instead of `main`. Forces a local FlashInfer build (skips prebuilt wheel download).
+- `--apply-flashinfer-pr <pr-num>` — fetch and apply a FlashInfer GitHub PR patch before building. Can be specified multiple times. Forces a local FlashInfer build.
+
+Both flags are incompatible with `--exp-mxfp4`.
 
 ### 2026-03-27
 
@@ -981,7 +994,9 @@ Using a different username:
 | `--rebuild-flashinfer` | Skip prebuilt wheel download; force a fresh local FlashInfer build |
 | `--rebuild-vllm` | Force rebuild vLLM from source |
 | `--vllm-ref <ref>` | vLLM commit SHA, branch or tag (default: `main`) |
+| `--flashinfer-ref <ref>` | FlashInfer commit SHA, branch or tag (default: `main`) |
 | `--apply-vllm-pr <pr-num>` | Apply a vLLM PR patch during build. Can be specified multiple times. |
+| `--apply-flashinfer-pr <pr-num>` | Apply a FlashInfer PR patch during build. Can be specified multiple times. |
 | `--tf5` | Install transformers v5 (5.0.0 or higher). Aliases: `--pre-tf, --pre-transformers`. |
 | `--exp-mxfp4` | Build with experimental native MXFP4 support. Alias: `--experimental-mxfp4`. |
 | `-c, --copy-to <hosts>` | Host(s) to copy the image to after building (space- or comma-separated). |

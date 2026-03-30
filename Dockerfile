@@ -110,6 +110,16 @@ RUN --mount=type=cache,id=repo-cache,target=/repo-cache \
 
 WORKDIR /workspace/flashinfer
 
+ARG FLASHINFER_PRS=""
+
+RUN if [ -n "$FLASHINFER_PRS" ]; then \
+        echo "Applying PRs: $FLASHINFER_PRS"; \
+        for pr in $FLASHINFER_PRS; do \
+            echo "Fetching and applying PR #$pr..."; \
+            curl -fL "https://github.com/flashinfer-ai/flashinfer/pull/${pr}.diff" | git apply -v; \
+        done; \
+    fi
+
 # Apply patch to avoid re-downloading existing cubins
 COPY flashinfer_cache.patch .
 RUN --mount=type=cache,id=uv-cache,target=/root/.cache/uv \
